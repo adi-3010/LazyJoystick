@@ -20,5 +20,5 @@ The features that have been planned for the implementation of the driver along w
 - Ability to bind macros - 4
 
 ## Working
-The driver makes use of libevdev to acquire/grab the inputs from the controller which are then sent to a processor which makes use of a uinput module which creates a virtual keyboard/mouse device to perform the needed functions. 
+The driver makes use of libevdev to acquire/grab the inputs from the controller which are then sent to a processor which makes use of a uinput module which creates a virtual keyboard/mouse device to perform the needed functions. For further documentation visit the [libevdev documentation](https://www.freedesktop.org/software/libevdev/doc/latest/). 
 
