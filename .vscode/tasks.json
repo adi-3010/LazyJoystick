@@ -1,0 +1,30 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "type": "shell",
+            "label": "Build Driver",
+            "command": "/usr/bin/gcc",
+            "args": [
+                "-std=c17",
+                "-Wall",
+                "-Wextra",
+                "-Wpedantic",
+                "-g",
+                "-I/usr/include/libevdev-1.0",
+                "${file}",
+                "-o",
+                "${fileDirname}/${fileBasenameNoExtension}",
+                "-levdev"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "detail": "Strict compiler task for Linux input driver with all warnings enabled."
+        }
+    ]
+}
