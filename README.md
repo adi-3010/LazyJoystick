@@ -1,0 +1,24 @@
+# LazyJoystick
+LazyJoystick is a linux user-space translation driver which converts commands from any Xbox-like controller into keyboard or mouse commands. This is meant to allow easy navigation of the computer using the controller, mainly for the convenience of scrolling and navigating through the desktop environment. Some application where you may be interested in using this driver are
+- Scrolling through PDFs
+- Using a controller as a wireless input device during presentations
+- Navigating basic tasks from the couch
+
+## Purpose
+While all of the above are possible using other solutions such as Steam Input or KDE's in-built translator(which is sadly, not configurable), this driver is built with the aim of being completely customisable and meant for the singular purpose of convenient usage. The prospect of being able to use my PC from the comforts of the couch is the actual primary motivation behind this project.
+
+## Implemented Features
+At present, only the reading interface for the driver has been written. In future versions, the implemented features will be listed here.
+
+## Planned Features
+The features that have been planned for the implementation of the driver along with their priority(lower number - higher priority) are as follows
+- High resolution scrolling with analog inputs (sticks and triggers) - 1
+- Ability to use analog inputs as a mouse pointer - 1
+- Ability to set customisable response curves for the analog inputs - 2
+- Ability to map buttons on the controller to keyboard or mouse keys - 1
+- Ability to bind shortcut keys - 3
+- Ability to bind macros - 4
+
+## Working
+The driver makes use of libevdev to acquire/grab the inputs from the controller which are then sent to a processor which makes use of a uinput module which creates a virtual keyboard/mouse device to perform the needed functions. 
+
