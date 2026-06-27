@@ -35,12 +35,14 @@ int main(int argc, char **argv) {
     struct libevdev *dev = NULL;
     if(libevdev_new_from_fd(hw_fd, &dev)<0){ // you can't control/access anything without the event dev struct
         printf("No struct initialise :(\n");
+        return EXIT_FAILURE;
     } 
     printf("Device Name: %s\n", libevdev_get_name(dev));
     printf("Vendor ID: 0x%04x, Product ID: 0x%04x\n", libevdev_get_id_vendor(dev), libevdev_get_id_product(dev));
     
     if(libevdev_grab(dev, LIBEVDEV_GRAB)<0){ // grabs the device so no others can use it
         printf("No grabby grabby :(\n"); 
+        return EXIT_FAILURE;
     }
 
     printf("Device grabbed exclusively! Press Ctrl+C to release and exit.\n\n");
