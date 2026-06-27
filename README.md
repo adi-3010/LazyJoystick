@@ -12,6 +12,7 @@ At present, only the reading interface for the driver has been written. In futur
 
 ## Planned Features
 The features that have been planned for the implementation of the driver along with their priority(lower number - higher priority) are as follows
+- A UI front-end to visualise controller inputs - 0
 - High resolution scrolling with analog inputs (sticks and triggers) - 1
 - Ability to use analog inputs as a mouse pointer - 1
 - Ability to set customisable response curves for the analog inputs - 2
