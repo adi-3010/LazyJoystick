@@ -23,11 +23,11 @@ The features that have been planned for the implementation of the driver along w
 The driver makes use of libevdev to acquire/grab the inputs from the controller which are then sent to a processor which makes use of a uinput module which creates a virtual keyboard/mouse device to perform the needed functions. 
 
 ## Documentation
-[libevdev Documentation](https://www.freedesktop.org/software/libevdev/doc/latest/)
-[Input Subsystem API Documentation](https://docs.kernel.org/driver-api/input.html)
-[Userspace Input API Documentation](https://docs.kernel.org/input/input_uapi.html)
-[uinput Documentation](https://docs.kernel.org/input/uinput.html)
-[Event Code Documentation](https://docs.kernel.org/input/event-codes.html)
-[user-space API guide](https://docs.kernel.org/userspace-api/index.html)
+- [libevdev Documentation](https://www.freedesktop.org/software/libevdev/doc/latest/)
+- [Input Subsystem API Documentation](https://docs.kernel.org/driver-api/input.html)
+- [Userspace Input API Documentation](https://docs.kernel.org/input/input_uapi.html)
+- [uinput Documentation](https://docs.kernel.org/input/uinput.html)
+- [Event Code Documentation](https://docs.kernel.org/input/event-codes.html)
+- [user-space API guide](https://docs.kernel.org/userspace-api/index.html)
 
 
