@@ -27,7 +27,10 @@ void print_event(struct input_event *ev) {
 }
 
 int main(int argc, char **argv) {
-
+    if(argc<2){
+        printf("Usage: %s /dev/input/eventX", argv[0] );
+        return EXIT_FAILURE;
+    }
     const char *dev_path = argv[1];
 
     int hw_fd = open(dev_path, O_RDONLY | O_NONBLOCK);
