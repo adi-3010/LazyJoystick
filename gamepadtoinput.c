@@ -16,6 +16,12 @@
 #define DEADZONE 0.02f            // 8% deadzone to prevent ghost scrolling
 #define SCROLL_SPEED_MOD 0.5f    // Sensitivity multiplier. Tweak this value to change scroll speed!
 
+// 120 units represents exactly ONE traditional scroll wheel notch click.
+#define WHEEL_NOTCH_VALUE 120.0f
+// Maximum scroll speed: How many high-res units to scroll per second at full stick tilt.
+// 720.0f units/sec = 6 full mechanical notches per second.
+#define MAX_SCROLL_SPEED_HI_RES 720.0f 
+
 int main(int argc, char** argv) {
     if(argc<2){
         printf("Usage: %s /dev/input/eventX", argv[0]);
@@ -60,15 +66,17 @@ int main(int argc, char** argv) {
     printf("LazyJoystick active! Update rate is set to 60Hz. Press Ctrl+C to terminate.\n");
 
     int current_rz = (int)CENTER_VAL;
-    
-    float scroll_accumulator = 0.0f;
+
+
+    float hires_accumulator = 0.0f;
+    float legacy_accumulator = 0.0f;
 
     // Structure timing configurations
     struct timespec frame_time;
     frame_time.tv_sec = 0;
     frame_time.tv_nsec = (long)(TICK_RATE_MS * 1000000L); // 16.67 milliseconds converted to nanoseconds
 
-    
+    float dt = TICK_RATE_MS / 1000.0f; // Delta-time in seconds (0.01667)
     while (1) {
         struct input_event ev;
         int rc;
@@ -96,30 +104,60 @@ int main(int argc, char** argv) {
             deflection = 0.0f;
         }
 
-        // Update the Tick Accumulator
-        // Speed modifier dictates velocity steps added inside a 16.67ms frame window
-        scroll_accumulator += (deflection * SCROLL_SPEED_MOD);
+        // Calculate raw high-res units earned during this frame cycle.
+        // We invert the sign because pushing stick UP (deflection < 0) should scroll UP (positive wheel)
+        float earned_units = -deflection * MAX_SCROLL_SPEED_HI_RES * dt;
 
-        // Evaluate Threshold boundaries and Inject Virtual Clicks
-        // If accumulator crosses +1.0f, emit a SCROLL DOWN event
-        if (scroll_accumulator >= 1.0f) {
-            struct input_event scroll_ev = { .type = EV_REL, .code = REL_WHEEL, .value = -1 }; // -1 is Down in Linux
-            struct input_event syn_ev = { .type = EV_SYN, .code = SYN_REPORT, .value = 0 };
+        hires_accumulator += earned_units;
+        legacy_accumulator += earned_units;
+
+        int send_packet = 0;
+
+        // Emit High-Resolution Scroll Steps
+        // We can emit integer chunks of high-resolution scroll steps immediately
+        if (abs((int)hires_accumulator) >= 1) {
+            int steps_to_send = (int)hires_accumulator;
             
-            write(ui_fd, &scroll_ev, sizeof(scroll_ev));
-            write(ui_fd, &syn_ev, sizeof(syn_ev));
+            struct input_event hires_ev = {
+                .type = EV_REL,
+                .code = REL_WHEEL_HI_RES,
+                .value = steps_to_send
+            };
+            write(ui_fd, &hires_ev, sizeof(hires_ev));
             
-            scroll_accumulator -= 1.0f; // Subtract whole tick, preserving tiny tracking remainders
+            hires_accumulator -= steps_to_send; // Keep the fractional remainder
+            send_packet = 1;
+        }
+
+        // Emit Legacy Compatibility Clicks
+        // If the legacy accumulator crosses the 120-unit notch threshold, we fire a legacy click
+        if (legacy_accumulator >= WHEEL_NOTCH_VALUE) {
+            struct input_event legacy_ev = {
+                .type = EV_REL,
+                .code = REL_WHEEL,
+                .value = 1 // Scroll Up
+            };
+            write(ui_fd, &legacy_ev, sizeof(legacy_ev));
+            
+            legacy_accumulator -= WHEEL_NOTCH_VALUE;
+            send_packet = 1;
         } 
-        // If accumulator crosses -1.0f, emit a SCROLL UP event
-        else if (scroll_accumulator <= -1.0f) {
-            struct input_event scroll_ev = { .type = EV_REL, .code = REL_WHEEL, .value = 1 }; // 1 is Up
+        else if (legacy_accumulator <= -WHEEL_NOTCH_VALUE) {
+            struct input_event legacy_ev = {
+                .type = EV_REL,
+                .code = REL_WHEEL,
+                .value = -1 // Scroll Down
+            };
+            write(ui_fd, &legacy_ev, sizeof(legacy_ev));
+            
+            legacy_accumulator += WHEEL_NOTCH_VALUE;
+            send_packet = 1;
+        }
+
+        // Push Synchronization Boundary Packet
+        if (send_packet) {
             struct input_event syn_ev = { .type = EV_SYN, .code = SYN_REPORT, .value = 0 };
-            
-            write(ui_fd, &scroll_ev, sizeof(scroll_ev));
             write(ui_fd, &syn_ev, sizeof(syn_ev));
-            
-            scroll_accumulator += 1.0f;
         }
 
         // High-precision POSIX sleep to regulate target tick speed
