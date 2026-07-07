@@ -30,5 +30,6 @@ The driver makes use of libevdev to acquire/grab the inputs from the controller 
 - [uinput Documentation](https://docs.kernel.org/input/uinput.html)
 - [Event Code Documentation](https://docs.kernel.org/input/event-codes.html)
 - [user-space API guide](https://docs.kernel.org/userspace-api/index.html)
-
+- [raylib CheatSheet](https://www.raylib.com/cheatsheet/cheatsheet.html)
+- [raylib Wiki](https://github.com/raysan5/raylib/wiki)
 
