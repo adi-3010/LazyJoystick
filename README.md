@@ -8,12 +8,11 @@ LazyJoystick is a linux user-space translation driver which converts commands fr
 While all of the above are possible using other solutions such as Steam Input or KDE's in-built translator(which is sadly, not configurable), this driver is built with the aim of being completely customisable and meant for the singular purpose of convenient usage. The prospect of being able to use my PC from the comforts of the couch is the actual primary motivation behind this project.
 
 ## Implemented Features
-At present, only the reading interface for the driver has been written. In future versions, the implemented features will be listed here.
+- High resolution scrolling with analog inputs (sticks and triggers). For now only scrolling with right stick works
 
 ## Planned Features
 The features that have been planned for the implementation of the driver along with their priority(lower number - higher priority) are as follows
-- A UI front-end to visualise controller inputs - 0
-- High resolution scrolling with analog inputs (sticks and triggers) - 1
+- A UI front-end to visualise controller inputs - 2
 - Ability to use analog inputs as a mouse pointer - 1
 - Ability to set customisable response curves for the analog inputs - 2
 - Ability to map buttons on the controller to keyboard or mouse keys - 1
