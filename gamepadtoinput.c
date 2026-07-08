@@ -6,25 +6,142 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <time.h>
+#include <stdint.h>
 #include <libevdev/libevdev.h>
 #include <libevdev/libevdev-uinput.h>
 #include <linux/uinput.h>
+#include <math.h>
 
 #define TICK_RATE_MS 16.67f       // 60 FPS Target Frame Time
 #define CENTER_VAL 32768.0f       // The physical center of your RZ Axis
 #define MAX_DEV 32768.0f          // Maximum deviation from center (32768 -> 65536 or 0)
 #define DEADZONE 0.02f            // 8% deadzone to prevent ghost scrolling
 #define SCROLL_SPEED_MOD 0.5f    // Sensitivity multiplier. Tweak this value to change scroll speed!
+#define STICK_DIRECTION 1 // Give this a value of -1 to invert the stick direction
+
+#define CONSTRAIN(x, lower, upper) (((x)<(lower))?(lower):(x>upper)?(upper):(x))
 
 // 120 units represents exactly ONE traditional scroll wheel notch click.
 #define WHEEL_NOTCH_VALUE 120.0f
 // Maximum scroll speed: How many high-res units to scroll per second at full stick tilt.
-// 720.0f units/sec = 6 full mechanical notches per second.
-#define MAX_SCROLL_SPEED_HI_RES 720.0f 
+// 840.0f units/sec = 7 full mechanical notches per second. Increasing this number
+// also increases the overall scrolling speed, as it is the number that is scaled
+#define MAX_SCROLL_SPEED_HI_RES 840.0f 
+
+typedef struct {
+    int vertical;
+    int horizontal;
+}Cartesian;
+
+typedef struct {
+    float vertical;
+    float horizontal;
+}Cartestian_flt;
+
+typedef struct {
+    float hiRes;
+    float legacy;
+}accumScroll;
+
+void readSticks(struct libevdev *hw_dev, Cartesian *left, Cartesian *right, struct input_event *ev){
+    // Flush and read all outstanding kernel events since the last tick
+    int rc;
+    while ((rc = libevdev_next_event(hw_dev, LIBEVDEV_READ_FLAG_NORMAL, ev)) == LIBEVDEV_READ_STATUS_SUCCESS) {
+        if (ev->type == EV_ABS && ev->code == ABS_RZ) {
+            right->vertical = ev->value;
+        }
+        if(ev->type == EV_ABS && ev->code == ABS_Z){
+            right->horizontal = ev->value;
+        }
+        if(ev->type == EV_ABS && ev->code == ABS_X){
+            left->horizontal = ev->value;
+        }
+        if(ev->type == EV_ABS && ev->code == ABS_Y){
+            left->vertical = ev->value;
+        }
+    }
+    if (rc == LIBEVDEV_READ_STATUS_SYNC) {
+        while (rc == LIBEVDEV_READ_STATUS_SYNC) rc = libevdev_next_event(hw_dev, LIBEVDEV_READ_FLAG_SYNC, ev);
+    }
+}
+
+Cartestian_flt calcDeflection(Cartesian stickData){
+    Cartestian_flt result;
+    // Calculate deflections. Using linear scaling and mapping direct percentages
+    result.vertical = STICK_DIRECTION*(((float)stickData.vertical) - CENTER_VAL)/MAX_DEV;
+    result.horizontal = STICK_DIRECTION*(((float)stickData.horizontal) - CENTER_VAL)/MAX_DEV;
+    // constrain to [-1.0f, 1.0f]
+    result.vertical = CONSTRAIN(result.vertical, -1.0f, 1.0f);
+    result.horizontal = CONSTRAIN(result.horizontal, -1.0f, 1.0f);
+    // Deadzone limits
+    if(fabsf(result.vertical) < DEADZONE){
+        result.vertical = 0.0f;
+    }
+    if(fabsf(result.horizontal) < DEADZONE){
+        result.horizontal = 0.0f;
+    }
+    return result;
+}
+
+int sendScroll(int ui_fd, accumScroll *vertical, accumScroll *horizontal){
+    // If any one command needs to be sent, make sendPacket true
+    int sendPacket = 0;
+    // High-Resolution First
+    // Vertical
+    if(abs((int)vertical->hiRes)>=1){ // if there is at least 1 
+        struct input_event hiRes_ev = {
+            .type = EV_REL,
+            .code = REL_WHEEL_HI_RES,
+            .value = (int)vertical->hiRes
+        };
+        write(ui_fd, &hiRes_ev, sizeof(hiRes_ev));
+        vertical->hiRes -= (int)vertical->hiRes;
+        sendPacket = 1;
+    }
+    // Horizontal
+    if(abs((int)horizontal->hiRes)>=1){
+        struct input_event hiRes_ev = {
+            .type = EV_REL,
+            .code = REL_HWHEEL_HI_RES,
+            .value = (int)horizontal->hiRes
+        };
+        write(ui_fd, &hiRes_ev, sizeof(hiRes_ev));
+        horizontal->hiRes -= (int)horizontal->hiRes;
+        sendPacket = 1;
+    }
+
+    // Legacy
+    // Vertical
+    if(abs((int)vertical->legacy)>=WHEEL_NOTCH_VALUE){ // if there is at least 1 
+        int notch = (vertical->legacy > 0)?1:-1;
+        struct input_event legacy_ev = {
+            .type = EV_REL,
+            .code = REL_WHEEL,
+            .value = notch
+        };
+        write(ui_fd, &legacy_ev, sizeof(legacy_ev));
+        vertical->legacy -= notch*WHEEL_NOTCH_VALUE;
+        sendPacket = 1;
+    }
+    // Horizontal
+    if(abs((int)horizontal->legacy)>=WHEEL_NOTCH_VALUE){
+        int notch = (horizontal->legacy>0)?1:-1;
+        struct input_event legacy_ev = {
+            .type = EV_REL,
+            .code = REL_HWHEEL,
+            .value = notch
+        };
+        write(ui_fd, &legacy_ev, sizeof(legacy_ev));
+        horizontal->legacy -= notch*WHEEL_NOTCH_VALUE;
+        sendPacket = 1;
+    }
+    return sendPacket;
+}
 
 int main(int argc, char** argv) {
     if(argc<2){
         printf("Usage: %s /dev/input/eventX", argv[0]);
+        return EXIT_FAILURE;
     }
 
     int hw_fd = open(argv[1], O_RDONLY | O_NONBLOCK);
@@ -57,19 +174,34 @@ int main(int argc, char** argv) {
     strcpy(usetup.name, "LazyJoystick Virtual Engine");
 
     // Configure uinput to support relative mouse scroll wheels
-    ioctl(ui_fd, UI_SET_EVBIT, EV_REL);
+    ioctl(ui_fd, UI_SET_EVBIT, EV_REL); 
     ioctl(ui_fd, UI_SET_RELBIT, REL_WHEEL);
     ioctl(ui_fd, UI_SET_RELBIT, REL_WHEEL_HI_RES);
+    ioctl(ui_fd, UI_SET_RELBIT, REL_HWHEEL);
+    ioctl(ui_fd, UI_SET_RELBIT, REL_HWHEEL_HI_RES);
+    ioctl(ui_fd, UI_SET_RELBIT, REL_X); // mouse movement horizontal
+    ioctl(ui_fd, UI_SET_RELBIT, REL_Y); // mouse movement vertical
+
+    ioctl(ui_fd, UI_SET_EVBIT, EV_KEY); // Using all buttons
+    ioctl(ui_fd, UI_SET_KEYBIT, BTN_LEFT); // Left click
+    ioctl(ui_fd, UI_SET_KEYBIT, BTN_RIGHT); // right click
+    ioctl(ui_fd, UI_SET_KEYBIT, BTN_MIDDLE); // middle click
+
     ioctl(ui_fd, UI_DEV_SETUP, &usetup);
     ioctl(ui_fd, UI_DEV_CREATE);
-
     printf("LazyJoystick active! Update rate is set to 60Hz. Press Ctrl+C to terminate.\n");
 
-    int current_rz = (int)CENTER_VAL;
+    Cartesian stickLeft;
+    stickLeft.vertical = (int)CENTER_VAL;
+    stickLeft.horizontal = (int)CENTER_VAL;
+    Cartesian stickRight;
+    stickRight.vertical = (int)CENTER_VAL;
+    stickRight.horizontal = (int)CENTER_VAL;
+    Cartestian_flt defLeft = {.horizontal = 0.0f, .vertical = 0.0f};
+    Cartestian_flt defRight = {.horizontal = 0.0f, .vertical = 0.0f};;
 
-
-    float hires_accumulator = 0.0f;
-    float legacy_accumulator = 0.0f;
+    accumScroll scrollVert = {.hiRes = 0.0f, .legacy = 0.0f};
+    accumScroll scrollHoriz = {.hiRes = 0.0f, .legacy = 0.0f};
 
     // Structure timing configurations
     struct timespec frame_time;
@@ -79,83 +211,38 @@ int main(int argc, char** argv) {
     float dt = TICK_RATE_MS / 1000.0f; // Delta-time in seconds (0.01667)
     while (1) {
         struct input_event ev;
-        int rc;
 
-        // Flush and read all outstanding kernel events since the last tick
-        while ((rc = libevdev_next_event(hw_dev, LIBEVDEV_READ_FLAG_NORMAL, &ev)) == LIBEVDEV_READ_STATUS_SUCCESS) {
-            if (ev.type == EV_ABS && ev.code == ABS_RZ) {
-                current_rz = ev.value;
-            }
-        }
-        if (rc == LIBEVDEV_READ_STATUS_SYNC) {
-            while (rc == LIBEVDEV_READ_STATUS_SYNC) rc = libevdev_next_event(hw_dev, LIBEVDEV_READ_FLAG_SYNC, &ev);
-        }
-
-        // Linear Scaling
-        // Calculate raw deflection direction and normalize it down to [-1.0, 1.0]
-        float deflection = ((float)current_rz - CENTER_VAL) / MAX_DEV;
-
-        // Clamp normalization bounds safely
-        if (deflection > 1.0f) deflection = 1.0f;
-        if (deflection < -1.0f) deflection = -1.0f;
-
-        // Apply Deadzone Filter
-        if (deflection > -DEADZONE && deflection < DEADZONE) {
-            deflection = 0.0f;
-        }
+        readSticks(hw_dev, &stickLeft, &stickRight, &ev); // Read stick data
+        // Normalise and store deflections (range: [-1.0f, 1.0f])
+        defLeft = calcDeflection(stickLeft); 
+        defRight = calcDeflection(stickRight);
 
         // Calculate raw high-res units earned during this frame cycle.
-        // We invert the sign because pushing stick UP (deflection < 0) should scroll UP (positive wheel)
-        float earned_units = -deflection * MAX_SCROLL_SPEED_HI_RES * dt;
+        // The gist of how high-res scrolling works is as follows
+        // Any mouse that doesn't have high-res scrolling support will always send a value 
+        // that is a multiple of 120
+        // Wheels that support high-res scrolling can support values between 0 and 120, 
+        // allowing smoother scrolling
+        // We invert the sign because pushing stick UP (deflection < 0) should scroll UP 
+        // (positive wheel)
+        
+        Cartestian_flt pointsToAdd;
+        pointsToAdd.vertical = -defRight.vertical * MAX_SCROLL_SPEED_HI_RES * dt;
+        pointsToAdd.horizontal = defRight.horizontal * MAX_SCROLL_SPEED_HI_RES * dt;
 
-        hires_accumulator += earned_units;
-        legacy_accumulator += earned_units;
+        scrollVert.hiRes += pointsToAdd.vertical;
+        scrollVert.legacy +=pointsToAdd.vertical;
 
-        int send_packet = 0;
+        scrollHoriz.hiRes +=pointsToAdd.horizontal;
+        scrollHoriz.legacy += pointsToAdd.horizontal;
 
-        // Emit High-Resolution Scroll Steps
-        // We can emit integer chunks of high-resolution scroll steps immediately
-        if (abs((int)hires_accumulator) >= 1) {
-            int steps_to_send = (int)hires_accumulator;
-            
-            struct input_event hires_ev = {
-                .type = EV_REL,
-                .code = REL_WHEEL_HI_RES,
-                .value = steps_to_send
-            };
-            write(ui_fd, &hires_ev, sizeof(hires_ev));
-            
-            hires_accumulator -= steps_to_send; // Keep the fractional remainder
-            send_packet = 1;
-        }
+        int sendPacket = 0;
 
-        // Emit Legacy Compatibility Clicks
-        // If the legacy accumulator crosses the 120-unit notch threshold, we fire a legacy click
-        if (legacy_accumulator >= WHEEL_NOTCH_VALUE) {
-            struct input_event legacy_ev = {
-                .type = EV_REL,
-                .code = REL_WHEEL,
-                .value = 1 // Scroll Up
-            };
-            write(ui_fd, &legacy_ev, sizeof(legacy_ev));
-            
-            legacy_accumulator -= WHEEL_NOTCH_VALUE;
-            send_packet = 1;
-        } 
-        else if (legacy_accumulator <= -WHEEL_NOTCH_VALUE) {
-            struct input_event legacy_ev = {
-                .type = EV_REL,
-                .code = REL_WHEEL,
-                .value = -1 // Scroll Down
-            };
-            write(ui_fd, &legacy_ev, sizeof(legacy_ev));
-            
-            legacy_accumulator += WHEEL_NOTCH_VALUE;
-            send_packet = 1;
-        }
+        sendPacket = sendScroll(ui_fd, &scrollVert, &scrollHoriz);
 
         // Push Synchronization Boundary Packet
-        if (send_packet) {
+        // Without this packet, the commands we have sent won't be processed
+        if (sendPacket) {
             struct input_event syn_ev = { .type = EV_SYN, .code = SYN_REPORT, .value = 0 };
             write(ui_fd, &syn_ev, sizeof(syn_ev));
         }
