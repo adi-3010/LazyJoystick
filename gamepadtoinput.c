@@ -12,12 +12,22 @@
 #include <linux/uinput.h>
 #include <math.h>
 
+/**
+ * TODO: Add toggle for horizontal scrolling(it's not always desirable). Make this accessible via
+ *       a key combination
+ * TODO: Implement mouse movement and clicking
+ */
+
+
+
+
 #define TICK_RATE_MS 16.67f       // 60 FPS Target Frame Time
-#define CENTER_VAL 32768.0f       // The physical center of your RZ Axis
+#define CENTER_VAL 32768.0f       // The physical center of the stick axes
 #define MAX_DEV 32768.0f          // Maximum deviation from center (32768 -> 65536 or 0)
-#define DEADZONE 0.02f            // 8% deadzone to prevent ghost scrolling
+#define DEADZONE 0.02f            // deadzone to prevent ghost scrolling
 #define SCROLL_SPEED_MOD 0.5f    // Sensitivity multiplier. Tweak this value to change scroll speed!
-#define STICK_DIRECTION 1 // Give this a value of -1 to invert the stick direction
+#define STICK_DIRECTION_VERT 1 // Give this a value of -1 to invert the stick direction
+#define STICK_DIRECTION_HORIZ 1 // Give this a value of -1 to invert the stick direction
 
 #define CONSTRAIN(x, lower, upper) (((x)<(lower))?(lower):(x>upper)?(upper):(x))
 
@@ -68,8 +78,8 @@ void readSticks(struct libevdev *hw_dev, Cartesian *left, Cartesian *right, stru
 Cartestian_flt calcDeflection(Cartesian stickData){
     Cartestian_flt result;
     // Calculate deflections. Using linear scaling and mapping direct percentages
-    result.vertical = STICK_DIRECTION*(((float)stickData.vertical) - CENTER_VAL)/MAX_DEV;
-    result.horizontal = STICK_DIRECTION*(((float)stickData.horizontal) - CENTER_VAL)/MAX_DEV;
+    result.vertical = (((float)stickData.vertical) - CENTER_VAL)/MAX_DEV;
+    result.horizontal = (((float)stickData.horizontal) - CENTER_VAL)/MAX_DEV;
     // constrain to [-1.0f, 1.0f]
     result.vertical = CONSTRAIN(result.vertical, -1.0f, 1.0f);
     result.horizontal = CONSTRAIN(result.horizontal, -1.0f, 1.0f);
@@ -227,8 +237,8 @@ int main(int argc, char** argv) {
         // (positive wheel)
         
         Cartestian_flt pointsToAdd;
-        pointsToAdd.vertical = -defRight.vertical * MAX_SCROLL_SPEED_HI_RES * dt;
-        pointsToAdd.horizontal = defRight.horizontal * MAX_SCROLL_SPEED_HI_RES * dt;
+        pointsToAdd.vertical = -STICK_DIRECTION_VERT*defRight.vertical * MAX_SCROLL_SPEED_HI_RES * dt;
+        pointsToAdd.horizontal = STICK_DIRECTION_HORIZ*defRight.horizontal * MAX_SCROLL_SPEED_HI_RES * dt;
 
         scrollVert.hiRes += pointsToAdd.vertical;
         scrollVert.legacy +=pointsToAdd.vertical;
