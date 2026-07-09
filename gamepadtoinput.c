@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -13,8 +14,7 @@
 #include <math.h>
 
 /**
- * TODO: Add toggle for horizontal scrolling(it's not always desirable). Make this accessible via
- *       a key combination
+ * TODO: Toggle horizontal scrolling via a key combination
  * TODO: Implement mouse movement and clicking
  */
 
@@ -37,6 +37,8 @@
 // 840.0f units/sec = 7 full mechanical notches per second. Increasing this number
 // also increases the overall scrolling speed, as it is the number that is scaled
 #define MAX_SCROLL_SPEED_HI_RES 840.0f 
+
+bool horizScrollState = true; // true is on, false is off
 
 typedef struct {
     int vertical;
@@ -226,6 +228,10 @@ int main(int argc, char** argv) {
         // Normalise and store deflections (range: [-1.0f, 1.0f])
         defLeft = calcDeflection(stickLeft); 
         defRight = calcDeflection(stickRight);
+
+        if(!horizScrollState){ // if the horizontal scroll state is false, make the horizontal deflection 0
+            defRight.horizontal = 0.0f;
+        }
 
         // Calculate raw high-res units earned during this frame cycle.
         // The gist of how high-res scrolling works is as follows

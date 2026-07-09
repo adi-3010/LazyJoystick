@@ -18,6 +18,7 @@ The features that have been planned for the implementation of the driver along w
 - Ability to map buttons on the controller to keyboard or mouse keys - 1
 - Ability to bind shortcut keys - 3
 - Ability to bind macros - 4
+- Add a functionality similar to Logitech's G-Shift - 3
 
 ## Working
 The driver makes use of libevdev to acquire/grab the inputs from the controller which are then sent to a processor which makes use of a uinput module which creates a virtual keyboard/mouse device to perform the needed functions. 
