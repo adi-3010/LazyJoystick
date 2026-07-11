@@ -53,9 +53,10 @@ typedef struct {
     float legacy;
 }accumScroll;
 
-void readSticks(struct libevdev *hw_dev, Cartesian *left, Cartesian *right, struct input_event *ev){
+int readSticks(struct libevdev *hw_dev, Cartesian *left, Cartesian *right, struct input_event *ev, int ui_fd){
     // Flush and read all outstanding kernel events since the last tick
     int rc;
+    int clickSent = 0;
     while ((rc = libevdev_next_event(hw_dev, LIBEVDEV_READ_FLAG_NORMAL, ev)) == LIBEVDEV_READ_STATUS_SUCCESS) {
         if (ev->type == EV_ABS && ev->code == ABS_RZ) {
             right->vertical = ev->value;
@@ -69,10 +70,26 @@ void readSticks(struct libevdev *hw_dev, Cartesian *left, Cartesian *right, stru
         if(ev->type == EV_ABS && ev->code == ABS_Y){
             left->vertical = ev->value;
         }
+
+        //ADDING FUNCTIONS TO READ CLICKS HERE:
+        if(ev->type == EV_KEY && ev->code == BTN_THUMBL){
+            struct input_event click_ev = { .type = EV_KEY, .code = BTN_LEFT, .value = ev->value };
+            write(ui_fd, &click_ev, sizeof(click_ev));
+            clickSent = 1;
+        }
+        if(ev->type == EV_KEY && ev->code == BTN_THUMBR){
+            struct input_event click_ev = { .type = EV_KEY, .code = BTN_RIGHT, .value = ev->value };
+            write(ui_fd, &click_ev, sizeof(click_ev));
+            clickSent = 1;
+        }
     }
+
+
     if (rc == LIBEVDEV_READ_STATUS_SYNC) {
         while (rc == LIBEVDEV_READ_STATUS_SYNC) rc = libevdev_next_event(hw_dev, LIBEVDEV_READ_FLAG_SYNC, ev);
     }
+
+    return clickSent;
 }
 
 Cartestian_flt calcDeflection(Cartesian stickData){
@@ -222,7 +239,7 @@ int main(int argc, char** argv) {
     while (1) {
         struct input_event ev;
 
-        readSticks(hw_dev, &stickLeft, &stickRight, &ev); // Read stick data
+        int clickSent = readSticks(hw_dev, &stickLeft, &stickRight, &ev,ui_fd); // Read stick data
         // Normalise and store deflections (range: [-1.0f, 1.0f])
         defLeft = calcDeflection(stickLeft); 
         defRight = calcDeflection(stickRight);
@@ -246,9 +263,8 @@ int main(int argc, char** argv) {
         scrollHoriz.hiRes +=pointsToAdd.horizontal;
         scrollHoriz.legacy += pointsToAdd.horizontal;
 
-        int sendPacket = 0;
-
-        sendPacket = sendScroll(ui_fd, &scrollVert, &scrollHoriz);
+        int sendPacket = sendScroll(ui_fd, &scrollVert, &scrollHoriz);
+        if (clickSent) sendPacket = 1;
 
         // Push Synchronization Boundary Packet
         // Without this packet, the commands we have sent won't be processed
