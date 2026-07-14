@@ -312,7 +312,7 @@ int main(int argc, char** argv) {
         // Normalise and store deflections (range: [-1.0f, 1.0f])
         defLeft = calcDeflection(stickLeft); 
         defRight = calcDeflection(stickRight);
-        buttons = getButtonState();
+        buttons = getButtonState(hw_dev, &ev);
         if(!horizScrollState){ // if the horizontal scroll state is false, make the horizontal deflection 0
             defRight.horizontal = 0.0f;
         }
