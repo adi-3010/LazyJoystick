@@ -55,6 +55,33 @@ typedef struct {
     float legacy;
 }accumScroll;
 
+typedef struct {
+    float x;
+    float y;
+}accumMouse;
+
+typedef union {
+    uint16_t buttonMap;
+    struct {
+        uint16_t a:1;
+        uint16_t b:1;
+        uint16_t x:1;
+        uint16_t y:1;
+        uint16_t start:1;
+        uint16_t select:1;
+        uint16_t home:1;
+        uint16_t up:1;
+        uint16_t down:1;
+        uint16_t left:1;
+        uint16_t right:1;
+        uint16_t thumbL:1;
+        uint16_t thumbR:1;
+        uint16_t bumperR:1;
+        uint16_t bumperL:1;
+        uint16_t unused:1;
+    };
+}buttonState_t;
+
 void readSticks(struct libevdev *hw_dev, Cartesian *left, Cartesian *right, struct input_event *ev){
     // Flush and read all outstanding kernel events since the last tick
     int rc;
@@ -150,6 +177,59 @@ int sendScroll(int ui_fd, accumScroll *vertical, accumScroll *horizontal){
     return sendPacket;
 }
 
+/**
+ *  Button Mapping - Cosmic Byte Stellaris
+    axisLX -  ABS_X
+    axisLY - ABS_Y
+    axisRX - ABS_Z
+    axisRY - ABS_RZ
+    triggerL - ABS_BRAKE
+    triggerR - ABS_GAS
+    hatUp - ABS_HAT0Y -1
+    hatDown - ABS_HAT0Y 1
+    hatLeft - ABS_HAT0X -1
+    hatRight - ABS_HAT0X 1
+    btA - BTN_SOUTH
+    btX - BTN_NORTH
+    btY - BTN_WEST
+    btB - BTN_EAST
+    thumbL - BTN_THUMBL
+    thumbR - BTN_THUMBR
+    bumperL - BTN_TL
+    bumperR - BTL_TR
+    select - BTN_BACK
+    start - BTN_START
+    home - KEY_HOMEPAGE
+ */
+
+buttonState_t getButtonState(struct libevdev* hw_dev, struct input_event *ev){
+    buttonState_t rv;
+    rv.buttonMap = 0;
+    int rc;
+    while((rc = libevdev_next_event(hw_dev, LIBEVDEV_READ_FLAG_NORMAL, ev)) == LIBEVDEV_READ_STATUS_SUCCESS){
+        if(ev->type == EV_KEY){
+            if(ev->code == BTN_SOUTH) rv.a = ev->value;
+            if(ev->code == BTN_NORTH) rv.x = ev->value;
+            if(ev->code == BTN_WEST) rv.y = ev->value;
+            if(ev->code == BTN_EAST) rv.b = ev->value;
+            if(ev->code == KEY_HOMEPAGE) rv.home = ev->value;
+            if(ev->code == BTN_START) rv.start = ev->value;
+            if(ev->code == BTN_BACK) rv.select = ev->value;
+            if(ev->code == BTN_THUMBL) rv.thumbL = ev->value;
+            if(ev->code == BTN_THUMBR) rv.thumbR = ev->value;
+            if(ev->code == BTN_TL) rv.bumperL = ev->value;
+            if(ev->code == BTN_TR) rv.bumperR = ev->value;
+        }
+        if(ev->type == EV_ABS){
+            if(ev->code == ABS_HAT0Y && ev->value == -1) rv.up = 1; else rv.up = 0;
+            if(ev->code == ABS_HAT0Y && ev->value == 1) rv.down = 1; else rv.down = 0;
+            if(ev->code == ABS_HAT0X && ev->value == -1) rv.left = 1; else rv.left = 0;
+            if(ev->code == ABS_HAT0X && ev->value == 1) rv.right = 1; else rv.right = 0;
+        }
+    }
+    return rv;
+}
+
 int main(int argc, char** argv) {
     if(argc<2){
         printf("Usage: %s /dev/input/eventX", argv[0]);
@@ -203,6 +283,9 @@ int main(int argc, char** argv) {
     ioctl(ui_fd, UI_DEV_CREATE);
     printf("LazyJoystick active! Update rate is set to 60Hz. Press Ctrl+C to terminate.\n");
 
+    
+    buttonState_t buttons;
+    buttons.buttonMap = 0;
     Cartesian stickLeft;
     stickLeft.vertical = (int)CENTER_VAL;
     stickLeft.horizontal = (int)CENTER_VAL;
@@ -214,6 +297,7 @@ int main(int argc, char** argv) {
 
     accumScroll scrollVert = {.hiRes = 0.0f, .legacy = 0.0f};
     accumScroll scrollHoriz = {.hiRes = 0.0f, .legacy = 0.0f};
+    accumMouse mouse = {.x = 0.0f, .y = 0.0f};
 
     // Structure timing configurations
     struct timespec frame_time;
@@ -228,7 +312,7 @@ int main(int argc, char** argv) {
         // Normalise and store deflections (range: [-1.0f, 1.0f])
         defLeft = calcDeflection(stickLeft); 
         defRight = calcDeflection(stickRight);
-
+        buttons = getButtonState();
         if(!horizScrollState){ // if the horizontal scroll state is false, make the horizontal deflection 0
             defRight.horizontal = 0.0f;
         }
