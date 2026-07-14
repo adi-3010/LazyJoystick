@@ -82,26 +82,71 @@ typedef union {
     };
 }buttonState_t;
 
-void readSticks(struct libevdev *hw_dev, Cartesian *left, Cartesian *right, struct input_event *ev){
+
+/**
+ *  Button Mapping - Cosmic Byte Stellaris
+    axisLX -  ABS_X
+    axisLY - ABS_Y
+    axisRX - ABS_Z
+    axisRY - ABS_RZ
+    triggerL - ABS_BRAKE
+    triggerR - ABS_GAS
+    hatUp - ABS_HAT0Y -1
+    hatDown - ABS_HAT0Y 1
+    hatLeft - ABS_HAT0X -1
+    hatRight - ABS_HAT0X 1
+    btA - BTN_SOUTH
+    btX - BTN_NORTH
+    btY - BTN_WEST
+    btB - BTN_EAST
+    thumbL - BTN_THUMBL
+    thumbR - BTN_THUMBR
+    bumperL - BTN_TL
+    bumperR - BTL_TR
+    select - BTN_BACK
+    start - BTN_START
+    home - KEY_HOMEPAGE
+ */
+int updateStates(struct libevdev *hw_dev, Cartesian *left, Cartesian *right, struct input_event *ev, buttonState_t *btn){
     // Flush and read all outstanding kernel events since the last tick
+    int update = 0;
     int rc;
     while ((rc = libevdev_next_event(hw_dev, LIBEVDEV_READ_FLAG_NORMAL, ev)) == LIBEVDEV_READ_STATUS_SUCCESS) {
-        if (ev->type == EV_ABS && ev->code == ABS_RZ) {
-            right->vertical = ev->value;
+        if (ev->type == EV_ABS) {
+            update = 1;
+            if(ev->code == ABS_RZ) right->vertical = ev->value;
+            else if(ev->code == ABS_Z) right->horizontal = ev->value;
+            else if(ev->code == ABS_X) left->horizontal = ev->value;
+            else if(ev->code == ABS_Y) left->vertical = ev->value;
+            else if(ev->code == ABS_HAT0Y){ // we don't want to clear the values of the hats for every abs
+                btn->up = (ev->value == -1);
+                btn->down = (ev->value == 1);
+            }
+            else if(ev->code == ABS_HAT0X && ev->value == -1) {
+                btn->left = (ev->value == -1);
+                btn->right = (ev->value == 1);
+            }
         }
-        if(ev->type == EV_ABS && ev->code == ABS_Z){
-            right->horizontal = ev->value;
-        }
-        if(ev->type == EV_ABS && ev->code == ABS_X){
-            left->horizontal = ev->value;
-        }
-        if(ev->type == EV_ABS && ev->code == ABS_Y){
-            left->vertical = ev->value;
+        if(ev->type == EV_KEY){
+            update = 1;
+            bool pressed = (ev->value != 0);// apparently value can have values 0, 1 and 2(which apparently means repeat)
+            if(ev->code == BTN_SOUTH) btn->a = pressed;
+            else if(ev->code == BTN_NORTH) btn->x = pressed;
+            else if(ev->code == BTN_WEST) btn->y = pressed;
+            else if(ev->code == BTN_EAST) btn->b = pressed;
+            else if(ev->code == KEY_HOMEPAGE) btn->home = pressed;
+            else if(ev->code == BTN_START) btn->start = pressed;
+            else if(ev->code == BTN_BACK) btn->select = pressed;
+            else if(ev->code == BTN_THUMBL) btn->thumbL = pressed;
+            else if(ev->code == BTN_THUMBR) btn->thumbR = pressed;
+            else if(ev->code == BTN_TL) btn->bumperL = pressed;
+            else if(ev->code == BTN_TR) btn->bumperR = pressed;
         }
     }
     if (rc == LIBEVDEV_READ_STATUS_SYNC) {
         while (rc == LIBEVDEV_READ_STATUS_SYNC) rc = libevdev_next_event(hw_dev, LIBEVDEV_READ_FLAG_SYNC, ev);
     }
+    return update;
 }
 
 Cartestian_flt calcDeflection(Cartesian stickData){
@@ -175,59 +220,6 @@ int sendScroll(int ui_fd, accumScroll *vertical, accumScroll *horizontal){
         sendPacket = 1;
     }
     return sendPacket;
-}
-
-/**
- *  Button Mapping - Cosmic Byte Stellaris
-    axisLX -  ABS_X
-    axisLY - ABS_Y
-    axisRX - ABS_Z
-    axisRY - ABS_RZ
-    triggerL - ABS_BRAKE
-    triggerR - ABS_GAS
-    hatUp - ABS_HAT0Y -1
-    hatDown - ABS_HAT0Y 1
-    hatLeft - ABS_HAT0X -1
-    hatRight - ABS_HAT0X 1
-    btA - BTN_SOUTH
-    btX - BTN_NORTH
-    btY - BTN_WEST
-    btB - BTN_EAST
-    thumbL - BTN_THUMBL
-    thumbR - BTN_THUMBR
-    bumperL - BTN_TL
-    bumperR - BTL_TR
-    select - BTN_BACK
-    start - BTN_START
-    home - KEY_HOMEPAGE
- */
-
-buttonState_t getButtonState(struct libevdev* hw_dev, struct input_event *ev){
-    buttonState_t rv;
-    rv.buttonMap = 0;
-    int rc;
-    while((rc = libevdev_next_event(hw_dev, LIBEVDEV_READ_FLAG_NORMAL, ev)) == LIBEVDEV_READ_STATUS_SUCCESS){
-        if(ev->type == EV_KEY){
-            if(ev->code == BTN_SOUTH) rv.a = ev->value;
-            if(ev->code == BTN_NORTH) rv.x = ev->value;
-            if(ev->code == BTN_WEST) rv.y = ev->value;
-            if(ev->code == BTN_EAST) rv.b = ev->value;
-            if(ev->code == KEY_HOMEPAGE) rv.home = ev->value;
-            if(ev->code == BTN_START) rv.start = ev->value;
-            if(ev->code == BTN_BACK) rv.select = ev->value;
-            if(ev->code == BTN_THUMBL) rv.thumbL = ev->value;
-            if(ev->code == BTN_THUMBR) rv.thumbR = ev->value;
-            if(ev->code == BTN_TL) rv.bumperL = ev->value;
-            if(ev->code == BTN_TR) rv.bumperR = ev->value;
-        }
-        if(ev->type == EV_ABS){
-            if(ev->code == ABS_HAT0Y && ev->value == -1) rv.up = 1; else rv.up = 0;
-            if(ev->code == ABS_HAT0Y && ev->value == 1) rv.down = 1; else rv.down = 0;
-            if(ev->code == ABS_HAT0X && ev->value == -1) rv.left = 1; else rv.left = 0;
-            if(ev->code == ABS_HAT0X && ev->value == 1) rv.right = 1; else rv.right = 0;
-        }
-    }
-    return rv;
 }
 
 int main(int argc, char** argv) {
@@ -307,12 +299,11 @@ int main(int argc, char** argv) {
     float dt = TICK_RATE_MS / 1000.0f; // Delta-time in seconds (0.01667)
     while (1) {
         struct input_event ev;
-
-        readSticks(hw_dev, &stickLeft, &stickRight, &ev); // Read stick data
+        int update = updateStates(hw_dev, &stickLeft, &stickRight, &ev, &buttons); // Read stick data
         // Normalise and store deflections (range: [-1.0f, 1.0f])
         defLeft = calcDeflection(stickLeft); 
         defRight = calcDeflection(stickRight);
-        buttons = getButtonState(hw_dev, &ev);
+        
         if(!horizScrollState){ // if the horizontal scroll state is false, make the horizontal deflection 0
             defRight.horizontal = 0.0f;
         }
