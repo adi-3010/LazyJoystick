@@ -9,11 +9,11 @@ While all of the above are possible using other solutions such as Steam Input or
 
 ## Implemented Features
 - High resolution scrolling with analog inputs (sticks and triggers). For now only scrolling with right stick works
+- Ability to use analog inputs as a mouse pointer
 
 ## Planned Features
 The features that have been planned for the implementation of the driver along with their priority(lower number - higher priority) are as follows
 - A UI front-end to visualise controller inputs - 2
-- Ability to use analog inputs as a mouse pointer - 1
 - Ability to set customisable response curves for the analog inputs - 2
 - Ability to map buttons on the controller to keyboard or mouse keys - 1
 - Ability to bind shortcut keys - 3
