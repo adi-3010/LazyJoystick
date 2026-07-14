@@ -15,7 +15,7 @@
 
 /**
  * TODO: Toggle horizontal scrolling via a key combination
- * TODO: Implement mouse movement and clicking
+ * TODO: Implement mouse clicking
  */
 
 
@@ -37,6 +37,8 @@
 // 840.0f units/sec = 7 full mechanical notches per second. Increasing this number
 // also increases the overall scrolling speed, as it is the number that is scaled
 #define MAX_SCROLL_SPEED_HI_RES 840.0f 
+
+#define MAX_MOUSE_SPEED 100.0f // this is probably the number of pixels per tick
 
 bool horizScrollState = true; // true is on, false is off
 
@@ -222,6 +224,31 @@ int sendScroll(int ui_fd, accumScroll *vertical, accumScroll *horizontal){
     return sendPacket;
 }
 
+int sendMouse(int ui_fd, accumMouse *mouse){
+    int sendPacket = 0;
+    // Horizontal
+    if(abs((int)mouse->x)>=1){
+        int steps = (int)mouse->x;
+        struct input_event mouseEv = {
+            .type = EV_REL, .code = REL_X, .value = steps
+        };
+        write(ui_fd, &mouseEv, sizeof(mouseEv));
+        mouse->x -= steps;
+        sendPacket = 1;
+    }
+    //Vertical
+    if(abs((int)mouse->y)>=1){
+        int steps = (int)mouse->y;
+        struct input_event mouseEv = {
+            .type = EV_REL, .code = REL_Y, .value = steps
+        };
+        write(ui_fd, &mouseEv, sizeof(mouseEv));
+        mouse->y -= steps;
+        sendPacket = 1;
+    }
+    return sendPacket;
+}
+
 int main(int argc, char** argv) {
     if(argc<2){
         printf("Usage: %s /dev/input/eventX", argv[0]);
@@ -277,6 +304,7 @@ int main(int argc, char** argv) {
 
     
     buttonState_t buttons;
+    buttonState_t prevButtons; // can be used for edge detection
     buttons.buttonMap = 0;
     Cartesian stickLeft;
     stickLeft.vertical = (int)CENTER_VAL;
@@ -327,17 +355,19 @@ int main(int argc, char** argv) {
         scrollHoriz.hiRes +=pointsToAdd.horizontal;
         scrollHoriz.legacy += pointsToAdd.horizontal;
 
+        mouse.x += defLeft.horizontal*MAX_MOUSE_SPEED*dt;
+        mouse.y += defLeft.vertical*MAX_MOUSE_SPEED*dt;
         int sendPacket = 0;
 
         sendPacket = sendScroll(ui_fd, &scrollVert, &scrollHoriz);
-
+        sendPacket = sendMouse(ui_fd, &mouse);
         // Push Synchronization Boundary Packet
         // Without this packet, the commands we have sent won't be processed
         if (sendPacket) {
             struct input_event syn_ev = { .type = EV_SYN, .code = SYN_REPORT, .value = 0 };
             write(ui_fd, &syn_ev, sizeof(syn_ev));
         }
-
+        prevButtons = buttons;
         // High-precision POSIX sleep to regulate target tick speed
         nanosleep(&frame_time, NULL);
     }
