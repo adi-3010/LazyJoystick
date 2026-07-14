@@ -36,11 +36,12 @@
 // Maximum scroll speed: How many high-res units to scroll per second at full stick tilt.
 // 840.0f units/sec = 7 full mechanical notches per second. Increasing this number
 // also increases the overall scrolling speed, as it is the number that is scaled
-#define MAX_SCROLL_SPEED_HI_RES 840.0f 
+#define MAX_SCROLL_SPEED_HI_RES 1000.0f 
 
-#define MAX_MOUSE_SPEED 100.0f // this is probably the number of pixels per tick
+// Notes for this value: 100 is slow af. 
+#define MAX_MOUSE_SPEED 300.0f // this is probably the number of pixels per tick
 
-bool horizScrollState = true; // true is on, false is off
+bool horizScrollState = false; // true is on, false is off... duh
 
 typedef struct {
     int vertical;
@@ -124,7 +125,7 @@ int updateStates(struct libevdev *hw_dev, Cartesian *left, Cartesian *right, str
                 btn->up = (ev->value == -1);
                 btn->down = (ev->value == 1);
             }
-            else if(ev->code == ABS_HAT0X && ev->value == -1) {
+            else if(ev->code == ABS_HAT0X) {
                 btn->left = (ev->value == -1);
                 btn->right = (ev->value == 1);
             }
@@ -359,8 +360,8 @@ int main(int argc, char** argv) {
         mouse.y += defLeft.vertical*MAX_MOUSE_SPEED*dt;
         int sendPacket = 0;
 
-        sendPacket = sendScroll(ui_fd, &scrollVert, &scrollHoriz);
-        sendPacket = sendMouse(ui_fd, &mouse);
+        sendPacket |= sendScroll(ui_fd, &scrollVert, &scrollHoriz);
+        sendPacket |= sendMouse(ui_fd, &mouse);
         // Push Synchronization Boundary Packet
         // Without this packet, the commands we have sent won't be processed
         if (sendPacket) {
