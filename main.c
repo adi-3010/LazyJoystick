@@ -15,11 +15,7 @@
 
 /**
  * TODO: Toggle horizontal scrolling via a key combination
- * TODO: Implement mouse clicking
  */
-
-
-
 
 #define TICK_RATE_MS 16.67f       // 60 FPS Target Frame Time
 #define CENTER_VAL 32768.0f       // The physical center of the stick axes
@@ -84,7 +80,6 @@ typedef union {
         uint16_t unused:1;
     };
 }buttonState_t;
-
 
 /**
  *  Button Mapping - Cosmic Byte Stellaris
@@ -250,6 +245,36 @@ int sendMouse(int ui_fd, accumMouse *mouse){
     return sendPacket;
 }
 
+int getChangeCount(uint16_t n){// counts set bits
+    int result = 0;
+    while(n!=0) n&=(n-1U);
+    return result;
+}
+int sendkeystrokes(int ui_fd, buttonState_t *buttons, buttonState_t prevButtons){
+    int sendPacket = 0;
+    buttonState_t toChange;
+    // Get only the states that have changed
+    toChange.buttonMap = buttons->buttonMap ^ prevButtons.buttonMap; // only the bits that have changed are set
+    int changeCount = getChangeCount(toChange.buttonMap); // gets the number of changes
+    // Only change the values of those that have changed?
+    if(buttons->bumperL ^ !prevButtons.bumperL){
+        struct input_event keyEv = {.type = EV_KEY, .code = BTN_LEFT, .value = buttons->bumperL};
+        write(ui_fd, &keyEv, sizeof(keyEv));
+        sendPacket = 1;
+    }
+    if(buttons->bumperR ^ !prevButtons.bumperR){
+        struct input_event keyEv = {.type = EV_KEY, .code = BTN_RIGHT, .value = buttons->bumperR};
+        write(ui_fd, &keyEv, sizeof(keyEv));
+        sendPacket = 1;
+    }
+    if(buttons->y ^ !prevButtons.y){
+        struct input_event keyEv = {.type = EV_KEY, .code = BTN_MIDDLE, .value = buttons->y};
+        write(ui_fd, &keyEv, sizeof(keyEv));
+        sendPacket = 1;
+    }
+    return sendPacket;
+}
+
 int main(int argc, char** argv) {
     if(argc<2){
         printf("Usage: %s /dev/input/eventX", argv[0]);
@@ -306,6 +331,7 @@ int main(int argc, char** argv) {
     
     buttonState_t buttons;
     buttonState_t prevButtons; // can be used for edge detection
+    prevButtons.buttonMap = 0;
     buttons.buttonMap = 0;
     Cartesian stickLeft;
     stickLeft.vertical = (int)CENTER_VAL;
@@ -362,6 +388,7 @@ int main(int argc, char** argv) {
 
         sendPacket |= sendScroll(ui_fd, &scrollVert, &scrollHoriz);
         sendPacket |= sendMouse(ui_fd, &mouse);
+        sendPacket |= sendKeystrokes(ui_fd, &buttons, prevButtons);
         // Push Synchronization Boundary Packet
         // Without this packet, the commands we have sent won't be processed
         if (sendPacket) {
