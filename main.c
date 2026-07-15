@@ -250,12 +250,12 @@ int getChangeCount(uint16_t n){// counts set bits
     while(n!=0) n&=(n-1U);
     return result;
 }
-int sendkeystrokes(int ui_fd, buttonState_t *buttons, buttonState_t prevButtons){
+int sendKeystrokes(int ui_fd, buttonState_t *buttons, buttonState_t prevButtons){
     int sendPacket = 0;
-    buttonState_t toChange;
+    // buttonState_t toChange;
     // Get only the states that have changed
-    toChange.buttonMap = buttons->buttonMap ^ prevButtons.buttonMap; // only the bits that have changed are set
-    int changeCount = getChangeCount(toChange.buttonMap); // gets the number of changes
+    // toChange.buttonMap = buttons->buttonMap ^ prevButtons.buttonMap; // only the bits that have changed are set
+    // int changeCount = getChangeCount(toChange.buttonMap); // gets the number of changes
     // Only change the values of those that have changed?
     if(buttons->bumperL ^ !prevButtons.bumperL){
         struct input_event keyEv = {.type = EV_KEY, .code = BTN_LEFT, .value = buttons->bumperL};
