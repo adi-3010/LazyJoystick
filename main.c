@@ -12,6 +12,7 @@
 #include <libevdev/libevdev-uinput.h>
 #include <linux/uinput.h>
 #include <math.h>
+#include <errno.h>
 
 /**
  * TODO: Toggle horizontal scrolling via a key combination
@@ -32,10 +33,10 @@
 // Maximum scroll speed: How many high-res units to scroll per second at full stick tilt.
 // 840.0f units/sec = 7 full mechanical notches per second. Increasing this number
 // also increases the overall scrolling speed, as it is the number that is scaled
-#define MAX_SCROLL_SPEED_HI_RES 1000.0f 
+#define MAX_SCROLL_SPEED_HI_RES 1200.0f 
 
 // Notes for this value: 100 is slow af. 
-#define MAX_MOUSE_SPEED 300.0f // this is probably the number of pixels per tick
+#define MAX_MOUSE_SPEED 600.0f // this is probably the number of pixels per tick
 
 bool horizScrollState = false; // true is on, false is off... duh
 
@@ -141,8 +142,14 @@ int updateStates(struct libevdev *hw_dev, Cartesian *left, Cartesian *right, str
             else if(ev->code == BTN_TR) btn->bumperR = pressed;
         }
     }
+
     if (rc == LIBEVDEV_READ_STATUS_SYNC) {
         while (rc == LIBEVDEV_READ_STATUS_SYNC) rc = libevdev_next_event(hw_dev, LIBEVDEV_READ_FLAG_SYNC, ev);
+    }else{
+        if(rc != -EAGAIN){
+            printf("Joystick disconnected! ");
+            update = -1;
+        }
     }
     return update;
 }
@@ -275,6 +282,45 @@ int sendKeystrokes(int ui_fd, buttonState_t *buttons, buttonState_t prevButtons)
     return sendPacket;
 }
 
+void detectConnection(int vendorID, int productID, int* hw_fd, struct libevdev **hw_dev){
+    printf("Scanning /dev/input/ for the product and vendor ID of the connected device...\n");
+    while(1){
+        DIR *dir = opendir("/dev/input");
+        if(!dir){
+            perror("Failed to open /dev/input");
+            sleep(2); continue; // wait 2 seconds and try again
+        }
+        struct dirent *entry;
+        while((entry = readdir(dir))!=NULL){
+            if(strncmp(entry->d_name, "event", 5)!=0){
+                continue; //ignore anything that's not an event
+            }
+            char path[PATH_MAX];
+            snprintf(path, sizeof(path), "/dev/input/%s", entry->d_name);
+            int test_fd = open(path, O_RDONLY|O_NONBLOCK);
+            if(test_fd<0) continue;
+
+            struct libevdev *test_dev = NULL;
+            if(libevdev_new_from_fd(test_fd, &test_dev)<0){
+                close(test_fd); continue;
+            }
+            int currentPID = libevdev_get_id_product(test_dev);
+            int currentVID = libevdev_get_id_vendor(test_dev);
+
+            if(currentPID == productID && currentVID == vendorID){
+                *hw_fd = test_fd;
+                *hw_dev = test_dev;
+                printf("Re-connection successful!\n");
+                return;
+            }
+            libevdev_free(test_dev);
+            close(test_fd);
+        }
+        closedir(dir);
+        sleep(2); // wait 2 seconds and try again
+    }
+}
+
 int main(int argc, char** argv) {
     if(argc<2){
         printf("Usage: %s /dev/input/eventX", argv[0]);
@@ -294,6 +340,8 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
     libevdev_grab(hw_dev, LIBEVDEV_GRAB);
+    int productID = libevdev_get_id_product(hw_dev);
+    int vendorID = libevdev_get_id_vendor(hw_dev);
 
     // --- Setup Virtual Mouse Subsystem via uinput ---
     int ui_fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
@@ -355,6 +403,11 @@ int main(int argc, char** argv) {
     while (1) {
         struct input_event ev;
         int update = updateStates(hw_dev, &stickLeft, &stickRight, &ev, &buttons); // Read stick data
+        if(update == -1){
+            printf("Waiting for reconnection\n");
+            detectConnection(vendorID, productID, &hw_fd, &hw_dev);
+            libevdev_grab(hw_dev, LIBEVDEV_GRAB);
+        }
         // Normalise and store deflections (range: [-1.0f, 1.0f])
         defLeft = calcDeflection(stickLeft); 
         defRight = calcDeflection(stickRight);
