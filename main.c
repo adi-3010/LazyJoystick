@@ -13,6 +13,7 @@
 #include <linux/uinput.h>
 #include <math.h>
 #include <errno.h>
+#include "config_helper.h"
 
 /**
  * TODO: Toggle horizontal scrolling via a key combination
@@ -309,6 +310,7 @@ void detectConnection(int vendorID, int productID, int* hw_fd, struct libevdev *
 
             if(currentPID == productID && currentVID == vendorID){
                 *hw_fd = test_fd;
+                libevdev_grab(test_dev, LIBEVDEV_GRAB);
                 *hw_dev = test_dev;
                 printf("Re-connection successful!\n");
                 return;
@@ -322,27 +324,35 @@ void detectConnection(int vendorID, int productID, int* hw_fd, struct libevdev *
 }
 
 int main(int argc, char** argv) {
+    int hw_fd; struct libevdev *hw_dev = NULL;
+    int productID; int vendorID;
+    if(argc==2){
+        hw_fd = open(argv[1], O_RDONLY|O_NONBLOCK);
+        if (hw_fd < 0) {
+            fprintf(stderr, "Incorrect device ID. Something's wrong with the file descriptor\n");
+            return EXIT_FAILURE;
+        }
+
+        if (libevdev_new_from_fd(hw_fd, &hw_dev) < 0) {
+            fprintf(stderr, "Couldn't create libevdev struct\n");
+            close(hw_fd);
+            return EXIT_FAILURE;
+        }
+        libevdev_grab(hw_dev, LIBEVDEV_GRAB);
+    }
     if(argc<2){
-        printf("Usage: %s /dev/input/eventX", argv[0]);
-        return EXIT_FAILURE;
+        if(loadConfigIDs(&vendorID, &productID)){
+            detectConnection(vendorID, productID, &hw_fd, &hw_dev);
+        }else{
+            printf("Usage: %s /dev/input/eventX\nAlternatively, enter the product and vendor ID in the config.ini file\n", argv[0]);
+            return EXIT_FAILURE;
+        }
     }
 
-    int hw_fd = open(argv[1], O_RDONLY | O_NONBLOCK);
-    if (hw_fd < 0) {
-        fprintf(stderr, "Incorrect device ID. Something's wrong with the file descriptor\n");
-        return EXIT_FAILURE;
-    }
-
-    struct libevdev *hw_dev = NULL;
-    if (libevdev_new_from_fd(hw_fd, &hw_dev) < 0) {
-        fprintf(stderr, "Couldn't create libevdev struct\n");
-        close(hw_fd);
-        return EXIT_FAILURE;
-    }
-    libevdev_grab(hw_dev, LIBEVDEV_GRAB);
-    int productID = libevdev_get_id_product(hw_dev);
-    int vendorID = libevdev_get_id_vendor(hw_dev);
-
+    
+    productID = libevdev_get_id_product(hw_dev);
+    vendorID = libevdev_get_id_vendor(hw_dev);
+    saveConfigIDs(vendorID, productID);
     // --- Setup Virtual Mouse Subsystem via uinput ---
     int ui_fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
     if (ui_fd < 0) {
