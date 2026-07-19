@@ -313,6 +313,7 @@ void detectConnection(int vendorID, int productID, int* hw_fd, struct libevdev *
                 libevdev_grab(test_dev, LIBEVDEV_GRAB);
                 *hw_dev = test_dev;
                 printf("Re-connection successful!\n");
+                closedir(dir);
                 return;
             }
             libevdev_free(test_dev);
@@ -414,6 +415,10 @@ int main(int argc, char** argv) {
         struct input_event ev;
         int update = updateStates(hw_dev, &stickLeft, &stickRight, &ev, &buttons); // Read stick data
         if(update == -1){
+            libevdev_grab(hw_dev, LIBEVDEV_UNGRAB);
+            libevdev_free(hw_dev);
+            hw_dev = NULL;
+            close(hw_fd);
             printf("Waiting for reconnection\n");
             detectConnection(vendorID, productID, &hw_fd, &hw_dev);
             libevdev_grab(hw_dev, LIBEVDEV_GRAB);
