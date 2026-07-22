@@ -52,6 +52,16 @@ typedef struct {
 }Cartestian_flt;
 
 typedef struct {
+    int left;
+    int right;
+}triggers_t;
+
+typedef struct {
+    int8_t left; 
+    int8_t right;
+}trigState_t;
+
+typedef struct {
     float hiRes;
     float legacy;
 }accumScroll;
@@ -107,7 +117,7 @@ typedef union {
     start - BTN_START
     home - KEY_HOMEPAGE
  */
-int updateStates(struct libevdev *hw_dev, Cartesian *left, Cartesian *right, struct input_event *ev, buttonState_t *btn){
+int updateStates(struct libevdev *hw_dev, Cartesian *left, Cartesian *right, triggers_t *triggers, trigState_t *trigState,struct input_event *ev, buttonState_t *btn){
     // Flush and read all outstanding kernel events since the last tick
     int update = 0;
     int rc;
@@ -118,6 +128,8 @@ int updateStates(struct libevdev *hw_dev, Cartesian *left, Cartesian *right, str
             else if(ev->code == ABS_Z) right->horizontal = ev->value;
             else if(ev->code == ABS_X) left->horizontal = ev->value;
             else if(ev->code == ABS_Y) left->vertical = ev->value;
+            else if(ev->code == ABS_BRAKE) {triggers->left = ev->value; trigState->left = (triggers->left > 512);}
+            else if(ev->code == ABS_GAS) {triggers->right = ev->value; trigState->right = (triggers->right > 512);}
             else if(ev->code == ABS_HAT0Y){ // we don't want to clear the values of the hats for every abs
                 btn->up = (ev->value == -1);
                 btn->down = (ev->value == 1);
@@ -258,7 +270,7 @@ int getChangeCount(uint16_t n){// counts set bits
     while(n!=0) n&=(n-1U);
     return result;
 }
-int sendKeystrokes(int ui_fd, buttonState_t *buttons, buttonState_t prevButtons){
+int sendKeystrokes(int ui_fd, buttonState_t *buttons, buttonState_t prevButtons, trigState_t *trigState, trigState_t prevTrigState){
     int sendPacket = 0;
     // buttonState_t toChange;
     // Get only the states that have changed
@@ -277,6 +289,36 @@ int sendKeystrokes(int ui_fd, buttonState_t *buttons, buttonState_t prevButtons)
     }
     if(buttons->y ^ !prevButtons.y){
         struct input_event keyEv = {.type = EV_KEY, .code = BTN_MIDDLE, .value = buttons->y};
+        write(ui_fd, &keyEv, sizeof(keyEv));
+        sendPacket = 1;
+    }
+    if(buttons->up ^ !prevButtons.up){
+        struct input_event keyEv = {.type = EV_KEY, .code = KEY_UP, .value = buttons->up};
+        write(ui_fd, &keyEv, sizeof(keyEv));
+        sendPacket = 1;
+    }
+    if(buttons->down ^ !prevButtons.down){
+        struct input_event keyEv = {.type = EV_KEY, .code = KEY_DOWN, .value = buttons->down};
+        write(ui_fd, &keyEv, sizeof(keyEv));
+        sendPacket = 1;
+    }
+    if(buttons->right ^ !prevButtons.right){
+        struct input_event keyEv = {.type = EV_KEY, .code = KEY_RIGHT, .value = buttons->right};
+        write(ui_fd, &keyEv, sizeof(keyEv));
+        sendPacket = 1;
+    }
+    if(buttons->left ^ !prevButtons.left){
+        struct input_event keyEv = {.type = EV_KEY, .code = KEY_LEFT, .value = buttons->left};
+        write(ui_fd, &keyEv, sizeof(keyEv));
+        sendPacket = 1;
+    }
+    if(trigState->left ^ !prevTrigState.left){
+        struct input_event keyEv = {.type = EV_KEY, .code = KEY_PAGEUP, .value = trigState->left };
+        write(ui_fd, &keyEv, sizeof(keyEv));
+        sendPacket = 1;
+    }
+    if(trigState->right ^ !prevTrigState.right){
+        struct input_event keyEv = {.type = EV_KEY, .code = KEY_PAGEDOWN, .value = trigState->right };
         write(ui_fd, &keyEv, sizeof(keyEv));
         sendPacket = 1;
     }
@@ -382,6 +424,12 @@ int main(int argc, char** argv) {
     ioctl(ui_fd, UI_SET_KEYBIT, BTN_LEFT); // Left click
     ioctl(ui_fd, UI_SET_KEYBIT, BTN_RIGHT); // right click
     ioctl(ui_fd, UI_SET_KEYBIT, BTN_MIDDLE); // middle click
+    ioctl(ui_fd, UI_SET_KEYBIT, KEY_UP);
+    ioctl(ui_fd, UI_SET_KEYBIT, KEY_DOWN);
+    ioctl(ui_fd, UI_SET_KEYBIT, KEY_RIGHT);
+    ioctl(ui_fd, UI_SET_KEYBIT, KEY_LEFT);
+    ioctl(ui_fd, UI_SET_KEYBIT, KEY_PAGEDOWN);
+    ioctl(ui_fd, UI_SET_KEYBIT, KEY_PAGEUP);
 
     ioctl(ui_fd, UI_DEV_SETUP, &usetup);
     ioctl(ui_fd, UI_DEV_CREATE);
@@ -400,6 +448,10 @@ int main(int argc, char** argv) {
     stickRight.horizontal = (int)CENTER_VAL;
     Cartestian_flt defLeft = {.horizontal = 0.0f, .vertical = 0.0f};
     Cartestian_flt defRight = {.horizontal = 0.0f, .vertical = 0.0f};;
+    triggers_t triggers = {.left = 0.0f, .right = 0.0f};
+    // triggers_t prevTriggers = {.left = 0.0f, .right = 0.0f};
+    trigState_t trigState = {.left = 0, .right = 0};
+    trigState_t prevTrigState = {.left = 0, .right = 0};
 
     accumScroll scrollVert = {.hiRes = 0.0f, .legacy = 0.0f};
     accumScroll scrollHoriz = {.hiRes = 0.0f, .legacy = 0.0f};
@@ -413,7 +465,8 @@ int main(int argc, char** argv) {
     float dt = TICK_RATE_MS / 1000.0f; // Delta-time in seconds (0.01667)
     while (1) {
         struct input_event ev;
-        int update = updateStates(hw_dev, &stickLeft, &stickRight, &ev, &buttons); // Read stick data
+        
+        int update = updateStates(hw_dev, &stickLeft, &stickRight, &triggers, &trigState, &ev, &buttons); // Read stick data
         if(update == -1){
             libevdev_grab(hw_dev, LIBEVDEV_UNGRAB);
             libevdev_free(hw_dev);
@@ -456,7 +509,7 @@ int main(int argc, char** argv) {
 
         sendPacket |= sendScroll(ui_fd, &scrollVert, &scrollHoriz);
         sendPacket |= sendMouse(ui_fd, &mouse);
-        sendPacket |= sendKeystrokes(ui_fd, &buttons, prevButtons);
+        sendPacket |= sendKeystrokes(ui_fd, &buttons, prevButtons, &trigState, prevTrigState);
         // Push Synchronization Boundary Packet
         // Without this packet, the commands we have sent won't be processed
         if (sendPacket) {
@@ -464,7 +517,8 @@ int main(int argc, char** argv) {
             write(ui_fd, &syn_ev, sizeof(syn_ev));
         }
         prevButtons = buttons;
-        // High-precision POSIX sleep to regulate target tick speed
+        prevTrigState = trigState;
+        // prevTriggers = triggers;
         nanosleep(&frame_time, NULL);
     }
 

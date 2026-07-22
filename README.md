@@ -12,12 +12,12 @@ While all of the above are possible using other solutions such as Steam Input or
 - Ability to use analog inputs as a mouse pointer
 - Automatic re-connection after disconnects
 - Automatic connection to a specified vendor and product ID
+- Ability to map buttons on the controller to keyboard or mouse keys(partially implemented)
 
 ## Planned Features
 The features that have been planned for the implementation of the driver along with their priority(lower number - higher priority) are as follows
 - A UI front-end to configure controller inputs - 2
 - Ability to set customisable response curves for the analog inputs - 2
-- Ability to map buttons on the controller to keyboard or mouse keys - 1
 - Ability to bind shortcut keys - 3
 - Ability to bind macros - 4
 - Add a functionality similar to Logitech's G-Shift - 3
@@ -74,6 +74,10 @@ By default, the following bindings apply
 - Left bumper - Left click
 - Right bumper - Right click
 - Y - Middle click
+- Hat buttons - Arrow keys
+- Left trigger - Page Up
+- Right Trigger - Page Down
+NOTE: Triggers are considered pressed when their analog value is greater than 512
 Configuration functionality will be added in the future through the config.ini file. 
 
 ## License
